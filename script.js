@@ -1470,13 +1470,22 @@ async function ipfieldChangeObserver(addedNode, fieldname){
   
   setTimeout(function(addedNode){
     let src_ip_span = $(`div[title=\"${fieldname}\"] + div span.pt-preserve-white-space`, addedNode);
-    src_ip_span.on('DOMSubtreeModified', async function(){
+    const ip_span_observer = new MutationObserver(mutationList =>
       setTimeout(function(changedElement){
-        changedElement.nextAll("span").remove();
-        src_ip = changedElement.text();
+        $(changedElement).nextAll("span").remove();
+        src_ip = $(changedElement).text();
         let addr = ipaddr.parse(src_ip);
         let range = addr.range();
-        
+
+        if (range === "unicast" || range === "private") {  // DEBUG!!!!!!!!!!!!!!!! remove private range
+          AddExternalServiceLink(src_ip_span, "проверить на VT", VTLink);
+          AddExternalServiceLink(src_ip_span, "проверить на AbuseIPDB", AbuseIPDBLink);
+          AddExternalServiceLink(src_ip_span, "проверить на IP-API", IPAPILink);
+          AddExternalServiceLink(src_ip_span, "проверить на SPUR", SpurLink);
+          AddExternalServiceLink(src_ip_span, "проверить на Whois7", Whois7Link);
+          AddExternalServiceLink(src_ip_span, "проверить на RSTCloud", RSTCloudLink);
+        }
+
         if('options' in options && 'iplinks' in options.options){
           let services = [...options.options.iplinks].reverse();
           services.forEach(e => {
@@ -1488,8 +1497,15 @@ async function ipfieldChangeObserver(addedNode, fieldname){
       
       },
       500,
-      $(this))
-    });
+      src_ip_span)
+    );
+    //seems like jquery not binding in shadow properly!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! CHECK AGAIN MF!!!!!!!!!!!!!!!!!!
+    span_in_shadow = addedNode.querySelector(`div[title=\"${fieldname}\"] + div span.pt-preserve-white-space`);
+    //console.log(span_in_shadow);
+    ip_span_observer.observe(span_in_shadow,{childList: true, subtree: true, characterDataOldValue: true,});
+    //!!!!ip_span_observer.observe(addedNode,{childList: true, subtree: true, characterDataOldValue: true, });
+
+
 
     src_ip_element = $(`div[title=\"${fieldname}\"]`, addedNode);
     src_ip_element.text(`▸${fieldname}`);
@@ -1508,6 +1524,16 @@ async function ipfieldChangeObserver(addedNode, fieldname){
     src_ip = src_ip_span.text();
     let addr = ipaddr.parse(src_ip);
     let range = addr.range();
+
+    // check this with {pt}-person (you know who)
+    if (range === "unicast" || range === "private") {  // DEBUG!!!!!!!!!!!!!!!! remove private range
+      AddExternalServiceLink(src_ip_span, "проверить на VT", VTLink);
+      AddExternalServiceLink(src_ip_span, "проверить на AbuseIPDB", AbuseIPDBLink);
+      AddExternalServiceLink(src_ip_span, "проверить на IP-API", IPAPILink);
+      AddExternalServiceLink(src_ip_span, "проверить на SPUR", SpurLink);
+      AddExternalServiceLink(src_ip_span, "проверить на Whois7", Whois7Link);
+      AddExternalServiceLink(src_ip_span, "проверить на RSTCloud", RSTCloudLink);
+    }
 
     if('options' in options && 'iplinks' in options.options){
       let services = [...options.options.iplinks].reverse();
