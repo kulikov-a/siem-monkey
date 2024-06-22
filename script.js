@@ -13,6 +13,36 @@
 //    limitations under the License.
 
 
+oldHref = document.location.href;
+// inject script in main app and get some info from there. we want window.appConfig
+// app locale is stored there
+window.appConfig = "";
+function injectScript(file_path, tag) {
+  var node = document.getElementsByTagName(tag)[0];
+  var script = document.createElement('script');
+  script.setAttribute('type', 'text/javascript');
+  script.setAttribute('src', file_path);
+  node.appendChild(script);
+}
+injectScript(chrome.runtime.getURL('web_accessible_resources.js'), 'body');
+
+//var port = chrome.runtime.connect();
+
+window.addEventListener("message", (event) => {
+  // We only accept messages from ourselves
+  if (event.source !== window) {
+    return;
+  }
+
+  if (event.data.type && (event.data.type === "FROM_PAGE")) {
+    console.log("Content script received: " + event.data.text);
+    if (event.data.text.length > 0) {
+      window.appConfig = JSON.parse(event.data.text);
+    }
+    //port.postMessage(event.data.text);
+  }
+}, false);
+//
 pt_tags = ["pt-siem-app-root", "pt-nad-root"];
 pt_product = false;
 siem_bananas = {
@@ -22,6 +52,13 @@ siem_bananas = {
 };
 siem_ver = "";
 prod_name = "";
+pt_locale_date_formats = {
+  "ru-RU":"d.M.y H:m:s",
+  "en-US":"M/d/y H:m:s",
+  "en-GB":"",
+  "user":"",
+};
+date_format = "";
 
 function get_prod_name() {
   let siem_title_elem = $(
@@ -36,12 +73,15 @@ function get_prod_name() {
   return "";
 }
 
-var SearchBananas = function (selectors, callback, interval, timeout) {
+function SearchBananas (selectors, callback, interval, timeout) {
   var time = 0;
   // exit early if not in pt product
   $.each(pt_tags, function(index, tag) {
     if (document.querySelectorAll(tag).length > 0) {
       pt_product = true;
+      if (tag == "pt-siem-app-root") {
+        monitorSIEMnav();
+      }
     }
   })
   if (pt_product == false) {
@@ -57,6 +97,7 @@ var SearchBananas = function (selectors, callback, interval, timeout) {
       callback("NAD");
       return;
     }
+
     if (typeof timeout !== "undefined" && time >= timeout) {
       clearInterval(poll);
       console.log("monkey wants BANANAS");
@@ -88,93 +129,107 @@ var SearchBananas = function (selectors, callback, interval, timeout) {
   }, interval);
 };
 
-SearchBananas(
-  siem_bananas,
-  function () {
-    insertMonkeyIntoUI();
-    // Если есть элементы "legacy-overlay" и "legacy-events-page", то мы очутились в 26.1
-    // Загружать CSS и вешать обработчик мутаций страницы нужно внутри shadowRoot
-    let legacy_overlay = $("legacy-overlay");
-    if (legacy_overlay.length === 1) {
-      let shadowRoot = legacy_overlay[0].shadowRoot;
-      observer.observe(shadowRoot, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-        attributes: true,
-      });
-      let jquery_ui_css;
-      try {
-        let css_url = chrome.runtime.getURL(
-          "libs/jquery-ui-1.12.1/jquery-ui.min.monkey.css" // using jquery-ui css just with embedded images
-        );
-        let xhr = new XMLHttpRequest();
-        xhr.onload = function () {
-          jquery_ui_css = this.response;
-        };
-        xhr.open("GET", css_url, false);
-        xhr.send();
-      } catch (err) {
-        console.log(
-          "Не удалось прочитать файл libs/jquery-ui-1.12.1/jquery-ui.min.monkey.css"
-        );
-        return;
-      }
-
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(jquery_ui_css);
-      shadowRoot.adoptedStyleSheets = [sheet];
+function siemMonkeyBind(product) {
+  // Let's set locale and string formats for date/time conversions
+  let pt_locale
+  if (window.appConfig) {
+    pt_locale = window.appConfig.locale;
+  }
+  if (pt_locale_date_formats["user"].length > 0) {
+    date_format = pt_locale_date_formats["user"];
+    console.log("Using custom date format. " + date_format);
+  } else if (pt_locale && pt_locale_date_formats[pt_locale]) {
+    date_format = pt_locale_date_formats[pt_locale];
+    console.log(pt_locale + " locale is set by App. Date format is " + date_format);
+  } else {
+    date_format = pt_locale_date_formats["ru-RU"];
+    console.log("Локаль не найдена и не установлена пользователем. Ну и пожалуйста. Ну и будет ru-RU. " + date_format);
+  }
+  if (!$("img.monkeydropbtn").length) {
+    insertMonkeyIntoUI(product);
+  }
+  //insertMonkeyIntoUI(product);
+  // Если есть элементы "legacy-overlay" и "legacy-events-page", то мы очутились в 26.1
+  // Загружать CSS и вешать обработчик мутаций страницы нужно внутри shadowRoot
+  let legacy_overlay = $("legacy-overlay");
+  if (legacy_overlay.length === 1) {
+    let shadowRoot = legacy_overlay[0].shadowRoot;
+    observer.observe(shadowRoot, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+    });
+    let jquery_ui_css;
+    try {
+      let css_url = chrome.runtime.getURL(
+        "libs/jquery-ui-1.12.1/jquery-ui.min.monkey.css" // using jquery-ui css just with embedded images
+      );
+      let xhr = new XMLHttpRequest();
+      xhr.onload = function () {
+        jquery_ui_css = this.response;
+      };
+      xhr.open("GET", css_url, false);
+      xhr.send();
+    } catch (err) {
+      console.log(
+        "Не удалось прочитать файл libs/jquery-ui-1.12.1/jquery-ui.min.monkey.css"
+      );
+      return;
     }
 
-    let legacy_events_page = $("legacy-events-page");
-    if (legacy_events_page.length === 1) {
-      let shadowRoot = legacy_events_page[0].shadowRoot;
-      observer.observe(shadowRoot, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-        attributes: true,
-      });
-      let siemMonkeyCSS;
-      try {
-        let css_url = chrome.runtime.getURL("siemMonkey.css");
-        let xhr = new XMLHttpRequest();
-        xhr.onload = function () {
-          siemMonkeyCSS = this.response;
-        };
-        xhr.open("GET", css_url, false);
-        xhr.send();
-      } catch (err) {
-        console.log("Не удалось прочитать файл siemMonkey.css");
-        return;
-      }
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(jquery_ui_css);
+    shadowRoot.adoptedStyleSheets = [sheet];
+  }
 
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(siemMonkeyCSS);
-      shadowRoot.adoptedStyleSheets = [sheet];
-    } else {
-      // Старый добрый UI до 26.0 включительно - вешаем обработчик мутаций прямо на весь document,
-      // а CSSы уже и так загружены расширением
-      observer.observe(document, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-        attributes: true,
-      });
+  let legacy_events_page = $("legacy-events-page");
+  if (legacy_events_page.length === 1) {
+    let shadowRoot = legacy_events_page[0].shadowRoot;
+    observer.observe(shadowRoot, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+    });
+    let siemMonkeyCSS;
+    try {
+      let css_url = chrome.runtime.getURL("siemMonkey.css");
+      let xhr = new XMLHttpRequest();
+      xhr.onload = function () {
+        siemMonkeyCSS = this.response;
+      };
+      xhr.open("GET", css_url, false);
+      xhr.send();
+    } catch (err) {
+      console.log("Не удалось прочитать файл siemMonkey.css");
+      return;
     }
-  },
-  500,
-  6000
-);
 
-function insertMonkeyIntoUI() {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(siemMonkeyCSS);
+    shadowRoot.adoptedStyleSheets = [sheet];
+  } else {
+    // Старый добрый UI до 26.0 включительно - вешаем обработчик мутаций прямо на весь document,
+    // а CSSы уже и так загружены расширением
+    observer.observe(document, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+    });
+  }
+}
+
+function insertMonkeyIntoUI(product) {
   let siem_title_elem = $("body > pt-siem-app-root > pt-siem-header > header > mc-navbar > mc-navbar-container:nth-child(1) > pt-siem-navbar-brand > a > mc-navbar-title");
   let siem_title = siem_title_elem.text();
 
   let nad_title_elem = $(".mc-navbar-title:first");
   let nad_title_elem_text = nad_title_elem.text();
   
- if (siem_title === "MaxPatrol 10") {
+  if (product === "SIEM") {
+  //if (siem_title === "MaxPatrol 10") {
     makeSideBarGreatAgain();
     let navbaritem = $(".mc-navbar-logo");
     navbaritem.append(`<img class="monkeydropbtn" width="32" height="32" src="${icondataurl}" alt="" />`);
@@ -195,8 +250,8 @@ function insertMonkeyIntoUI() {
         }
       }
     );
-  }
-  else if (nad_title_elem_text === "NAD") {
+  } else if (product === "NAD") {
+  //else if (nad_title_elem_text === "NAD") {
     var navbaritem = $(".mc-navbar-logo");
     navbaritem.after(`<img class="monkeydropbtn" width="32" height="32" src="${icondataurl}" alt="" />`);
     $(".monkeydropbtn")
@@ -231,10 +286,20 @@ function makeSideBarGreatAgain()
     {
       iframe = $('#legacyApplicationFrame'); 
       sidebar = $('.mc-sidebar_right', iframe.contents()); //new ui R25
+      if (sidebar.length == 0) {
+        // shadowRoot
+        let legacy_events = $("legacy-events-page");
+        if (legacy_events.length === 1) {
+          let shadowRoot = legacy_events[0].shadowRoot;
+          if (shadowRoot) {
+            sidebar = $(shadowRoot).find('.mc-sidebar_right');
+          }
+        }
+      }
     }
   }
   icons = sidebar.find(".pt-icons").first();
-  icons.before(`<img class="blinkAndRemove" width="16" height="16" src="${icon16dateurl}" alt="" />`)
+  icons.before(`<img class="blinkAndRemove sidebarWithMonkey" width="16" height="16" src="${icon16dateurl}" alt="" />`)
   sidebar.attr('style', function(i, style){   
       return style && style.replace(/(max-width: )(\d+)(px)/, '$131337$3');
   });
@@ -244,7 +309,7 @@ function makeSideBarGreatAgain()
   .delay(100).fadeTo(100,0.5)
   .delay(100).fadeTo(100,1)
   .delay(100).fadeTo(100,0.5)
-  .delay(100).fadeTo(100,1, function(){$(this).remove();});
+  .delay(100).fadeTo(100,1, function(){$(this).hide();});
 }
 
 function extractLast( term ) {
@@ -426,6 +491,13 @@ let observer = new MutationObserver(async mutations => {
    }
 });
 
+
+SearchBananas(
+  siem_bananas,
+  siemMonkeyBind,
+  500,
+  6000
+);
 
 async function GetOptionsFromStorage(){
   options  = await getStorageData('options');
@@ -805,6 +877,221 @@ function getFieldValueFromSidebar(fieldName) {
     fieldValue = $(`div[title=\"${fieldName}\"] + div > div > div:first`).text().trim('↵');
   }
   return fieldValue;
+}
+
+// ------------------------------------------------------------------
+// Utility functions for parsing in getDateFromFormat()
+// ------------------------------------------------------------------
+function _isInteger(val) {
+	var digits="1234567890";
+	for (var i=0; i < val.length; i++) {
+		if (digits.indexOf(val.charAt(i))==-1) { return false; }
+		}
+	return true;
+}
+function _getInt(str,i,minlength,maxlength) {
+	for (var x=maxlength; x>=minlength; x--) {
+		var token=str.substring(i,i+x);
+		if (token.length < minlength) { return null; }
+		if (_isInteger(token)) { return token; }
+		}
+	return null;
+}
+// ------------------------------------------------------------------
+// getDateFromFormat( date_string , format_string )
+//
+// This function takes a date string and a format string.
+// If the date string matches the format string, it returns the
+// getTime() of the date. If it does not match, it returns 0.
+// ------------------------------------------------------------------
+// Field        | Full Form          | Short Form
+// -------------+--------------------+-----------------------
+// Year         | yyyy (4 digits)    | yy (2 digits), y (2 or 4 digits)
+// Month        | MMM (name or abbr.)| MM (2 digits), M (1 or 2 digits)
+//              | NNN (abbr.)        |
+// Day of Month | dd (2 digits)      | d (1 or 2 digits)
+// Day of Week  | EE (name)          | E (abbr)
+// Hour (1-12)  | hh (2 digits)      | h (1 or 2 digits)
+// Hour (0-23)  | HH (2 digits)      | H (1 or 2 digits)
+// Hour (0-11)  | KK (2 digits)      | K (1 or 2 digits)
+// Hour (1-24)  | kk (2 digits)      | k (1 or 2 digits)
+// Minute       | mm (2 digits)      | m (1 or 2 digits)
+// Second       | ss (2 digits)      | s (1 or 2 digits)
+// AM/PM        | a                  |
+function getDateFromFormat(val, format) {
+  val = val + "";
+  format = format + "";
+  var i_val = 0;
+  var i_format = 0;
+  var c = "";
+  var token = "";
+  //var token2 = "";
+  var x, y;
+  var now = new Date();
+  var year = now.getYear();
+  var month = now.getMonth() + 1;
+  var date = 1;
+  var hh = now.getHours();
+  var mm = now.getMinutes();
+  var ss = now.getSeconds();
+  var ampm = "";
+
+  while (i_format < format.length) {
+    // Get next token from format string
+    c = format.charAt(i_format);
+    token = "";
+    while (format.charAt(i_format) == c && i_format < format.length) {
+      token += format.charAt(i_format++);
+    }
+    // Extract contents of value based on format token
+    if (token == "yyyy" || token == "yy" || token == "y") {
+      if (token == "yyyy") {
+        x = 4;
+        y = 4;
+      }
+      if (token == "yy") {
+        x = 2;
+        y = 2;
+      }
+      if (token == "y") {
+        x = 2;
+        y = 4;
+      }
+      year = _getInt(val, i_val, x, y);
+      if (year == null) {
+        return 0;
+      }
+      i_val += year.length;
+      if (year.length == 2) {
+        if (year > 70) {
+          year = 1900 + (year - 0);
+        } else {
+          year = 2000 + (year - 0);
+        }
+      }
+    } else if (token == "MMM" || token == "NNN") {
+      month = 0;
+      for (var i = 0; i < MONTH_NAMES.length; i++) {
+        var month_name = MONTH_NAMES[i];
+        if (val.substring(i_val, i_val + month_name.length).toLowerCase() == month_name.toLowerCase()) {
+          if (token == "MMM" || (token == "NNN" && i > 11)) {
+            month = i + 1;
+            if (month > 12) {
+              month -= 12;
+            }
+            i_val += month_name.length;
+            break;
+          }
+        }
+      }
+      if (month < 1 || month > 12) {
+        return 0;
+      }
+    } else if (token == "EE" || token == "E") {
+      for (var i = 0; i < DAY_NAMES.length; i++) {
+        var day_name = DAY_NAMES[i];
+        if (val.substring(i_val, i_val + day_name.length).toLowerCase() == day_name.toLowerCase()) {
+          i_val += day_name.length;
+          break;
+        }
+      }
+    } else if (token == "MM" || token == "M") {
+      month = _getInt(val, i_val, token.length, 2);
+      if (month == null || month < 1 || month > 12) {
+        return 0;
+      }
+      i_val += month.length;
+    } else if (token == "dd" || token == "d") {
+      date = _getInt(val, i_val, token.length, 2);
+      if (date == null || date < 1 || date > 31) {
+        return 0;
+      }
+      i_val += date.length;
+    } else if (token == "hh" || token == "h") {
+      hh = _getInt(val, i_val, token.length, 2);
+      if (hh == null || hh < 1 || hh > 12) {
+        return 0;
+      }
+      i_val += hh.length;
+    } else if (token == "HH" || token == "H") {
+      hh = _getInt(val, i_val, token.length, 2);
+      if (hh == null || hh < 0 || hh > 23) {
+        return 0;
+      }
+      i_val += hh.length;
+    } else if (token == "KK" || token == "K") {
+      hh = _getInt(val, i_val, token.length, 2);
+      if (hh == null || hh < 0 || hh > 11) {
+        return 0;
+      }
+      i_val += hh.length;
+    } else if (token == "kk" || token == "k") {
+      hh = _getInt(val, i_val, token.length, 2);
+      if (hh == null || hh < 1 || hh > 24) {
+        return 0;
+      }
+      i_val += hh.length;
+      hh--;
+    } else if (token == "mm" || token == "m") {
+      mm = _getInt(val, i_val, token.length, 2);
+      if (mm == null || mm < 0 || mm > 59) {
+        return 0;
+      }
+      i_val += mm.length;
+    } else if (token == "ss" || token == "s") {
+      ss = _getInt(val, i_val, token.length, 2);
+      if (ss == null || ss < 0 || ss > 59) {
+        return 0;
+      }
+      i_val += ss.length;
+    } else if (token == "a") {
+      if (val.substring(i_val, i_val + 2).toLowerCase() == "am") {
+        ampm = "AM";
+      } else if (val.substring(i_val, i_val + 2).toLowerCase() == "pm") {
+        ampm = "PM";
+      } else {
+        return 0;
+      }
+      i_val += 2;
+    } else {
+      if (val.substring(i_val, i_val + token.length) != token) {
+        return 0;
+      } else {
+        i_val += token.length;
+      }
+    }
+  }
+  // If there are any trailing characters left in the value, it doesn't match
+  if (i_val != val.length) {
+    return 0;
+  }
+  // Is date valid for month?
+  if (month == 2) {
+    // Check for leap year
+    if ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0) {
+      // leap year
+      if (date > 29) {
+        return 0;
+      }
+    } else {
+      if (date > 28) {
+        return 0;
+      }
+    }
+  }
+  if (month == 4 || month == 6 || month == 9 || month == 11) {
+    if (date > 30) {
+      return 0;
+    }
+  }
+  // Correct hours value
+  if (hh < 12 && ampm == "PM") {
+    hh = hh - 0 + 12;
+  } else if (hh > 11 && ampm == "AM") {
+    hh -= 12;
+  }
+  var newdate = new Date(year, month - 1, date, hh, mm, ss);
+  return newdate.getTime();
 }
 
 /**
@@ -1555,3 +1842,48 @@ GetOptionsFromStorage().then(() => {
     (document.head || document.documentElement).appendChild(s);
   }
 });
+
+// catch if SIEM menu is changed and there is a place for Monkey
+function monitorSIEMnav() {
+  let config = {
+    attributes: false,
+    subtree: true,
+    childList: true,
+  };
+
+  let callback = function(mutationList, monkeyObserver) {
+    // if MP href changed, is monkey on sidebar?
+    // attach if needed
+    if (oldHref !== document.location.href) {
+      oldHref = document.location.href;
+      console.log("href changed");
+
+      let target_class = ".sidebarWithMonkey";
+      let monkey_binded = 0;
+      monkey_binded = document.querySelectorAll(target_class).length;
+      if (monkey_binded == 0) {
+        // search in shadowRoot too
+        let legacy_events = $("legacy-events-page");
+        if (legacy_events.length === 1) {
+          let shadowRoot = legacy_events[0].shadowRoot;
+          if (shadowRoot) {
+            monkey_binded = $(shadowRoot).find(target_class).length;
+          }
+        }
+      }
+      console.log("Monkey binded: " + monkey_binded);
+      if (monkey_binded == 0) {
+        console.log("we want Monkey");
+        SearchBananas(
+          siem_bananas,
+          siemMonkeyBind,
+          500,
+          6000
+        );
+      }
+    }
+  }
+  let targetNode = document.getElementsByTagName("pt-siem-app-root")[0];
+  monkeyObserver = new MutationObserver(callback);
+  monkeyObserver.observe(targetNode, config);
+}
