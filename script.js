@@ -1471,6 +1471,7 @@ async function ipfieldChangeObserver(addedNode, fieldname){
   setTimeout(function(addedNode){
     let src_ip_span = $(`div[title=\"${fieldname}\"] + div span.pt-preserve-white-space`, addedNode);
     const ip_span_observer = new MutationObserver(mutationList =>
+      // костылим ожидание, пока загрузится всё в правой панели, 500 мс должно хватить
       setTimeout(function(changedElement){
         $(changedElement).nextAll("span").remove();
         src_ip = $(changedElement).text();
@@ -1562,7 +1563,8 @@ async function uuidChange(addedNode){
     let value_node_span = $("pdql-fast-filter", addedNode);
   
     // нарисовать иконки при изменении значения поля uuid
-    value_node_span.on('DOMSubtreeModified', async function(){
+    //value_node_span.on('DOMSubtreeModified', async function(){
+    const value_span_observer = new MutationObserver(mutationList =>
     // костылим ожидание, пока загрузится всё в правой панели, 500 мс должно хватить
       setTimeout(function(changedElement){
         let sidebar = changedElement.closest('mc-sidebar');
@@ -1575,8 +1577,11 @@ async function uuidChange(addedNode){
         }
       },
       500,
-      $(this))
-    });
+      value_node_span)
+    );
+    // bind in shadow?
+    value_node_in_shadow = addedNode.querySelector("pdql-fast-filter");
+    value_span_observer.observe(value_node_in_shadow,{childList: true, subtree: true, characterDataOldValue: true,});
 
     // нарисовать иконки загрузки событий при появлении uuid первый раз на странице
     let sidebar = $(addedNode).closest('mc-sidebar');
@@ -1769,14 +1774,18 @@ if(window.location.pathname != '/ng1/') {
 async function fieldAliases(addedNode) {
   await applyFieldAliases(addedNode);
   let value_node_span = $("pdql-fast-filter", addedNode);
-  value_node_span.on('DOMSubtreeModified', async function(){
+  //value_node_span.on('DOMSubtreeModified', async function(){
+  const value_node_span_observer = new MutationObserver(mutationList =>
     // костылим ожидание, пока загрузится всё в правой панели, 500 мс должно хватить
     setTimeout(async function(changedElement){
       await applyFieldAliases(changedElement);
     },
     500,
-    $(this))
-  });
+    value_node_span)
+  );
+  // bind in shadow?
+  value_node_span_in_shadow = addedNode.querySelector("pdql-fast-filter");
+  value_node_span_observer.observe(value_node_span_in_shadow,{childList: true, subtree: true, characterDataOldValue: true,});
 }
 
 var originalFieldsNames = []
