@@ -84,6 +84,11 @@ div.mc-dt[title="dst.ip"] {
   cursor: pointer; 
 }
 
+.monkey_link_title {
+  color: rgb(64, 204, 51) !important;
+  cursor: pointer;
+}
+
 span.ip-check-external-link{
   color: rgb(64, 204, 51);
   box-sizing: border-box;

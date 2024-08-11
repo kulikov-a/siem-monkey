@@ -22,7 +22,7 @@
  {
      let commandlineField = "object.process.cmdline";
      let events;
-     if(pre_events[0]['msgid'].includes("exec")) {
+     if(pre_events[0] && 'msgid' in pre_events[0] && pre_events[0]['msgid'].includes("exec")) {
          events = pre_events.map(x => ({
             ...x,
             tree_id: x['object.process.id'],
@@ -30,7 +30,7 @@
         }));
      }
      else {
-         if('object.process.guid' in pre_events[0] && pre_events[0]['object.process.guid'] != null) {
+         if(pre_events[0] && 'object.process.guid' in pre_events[0] && pre_events[0]['object.process.guid'] != null) {
              events = pre_events.map(x => ({
                 ...x,
                 tree_id: x['object.process.guid'],
@@ -112,7 +112,7 @@ async function processTreeBranch(pre_events, outputelemsuffix="")
     {
         let commandlineField = "object.process.cmdline";
         let events;
-        if(treeBranchEvents[0]['msgid'].includes("exec")) {
+        if('msgid' in treeBranchEvents[0] && treeBranchEvents[0]['msgid'] !== null && treeBranchEvents[0]['msgid'].includes("exec")) {
             events = treeBranchEvents.map(x => ({
                ...x,
                tree_id: x['object.process.id'],
@@ -251,7 +251,7 @@ async function processTreeBranchReverse(pre_events, outputelemsuffix="")
         {
             let commandlineField = "object.process.cmdline";
             let events;
-            if(treeBranchEvents[0]['msgid'].includes("exec")) {
+            if('msgid' in treeBranchEvents[0] && treeBranchEvents[0]['msgid'] !== null && treeBranchEvents[0]['msgid'].includes("exec")) {
                 events = treeBranchEvents.map(x => ({
                    ...x,
                    tree_id: x['object.process.id'],

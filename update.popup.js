@@ -42,23 +42,23 @@ function d3_tree_click(d) {
 // Toggle children on click.
 function d3_process_line_click(d) {
     // Открыть в новой вкладке события, связанные с процессом
-    if('object.process.guid' in d.data.original) {
-        condition = `event_src.host = '${d.data.original['event_src.host']}'`+
-        ` and (object.process.guid = '${d.data.original['object.process.guid']}'`+
-        ` or subject.process.guid = '${d.data.original['object.process.guid']}')`;
-      }
-      else {
-        condition = `event_src.host = '${d.data.original['event_src.host']}'`+
-        ` and (object.process.id = ${d.data.original['object.process.id']})`;
-      }
+    if ('original' in d.data) {
+        if('object.process.guid' in d.data.original) {
+            condition = `event_src.host = '${d.data.original['event_src.host']}'`+
+            ` and (object.process.guid = '${d.data.original['object.process.guid']}'`+
+            ` or subject.process.guid = '${d.data.original['object.process.guid']}')`;
+        } else {
+            condition = `event_src.host = '${d.data.original['event_src.host']}'`+
+            ` and (object.process.id = ${d.data.original['object.process.id']})`;
+        }
 
-      if(typeof(chrome.tabs) !== 'undefined') { // если вызов из popup плагина
-        chrome.tabs.create({url: `${siemUrl}/#/events/view?where=${condition}`});  
-      }
-      else {
-        window.open(`${siemUrl}/#/events/view?where=${condition}`, "_blank");
-      }
-  }
+        if(typeof(chrome.tabs) !== 'undefined') { // если вызов из popup плагина
+            chrome.tabs.create({url: `${siemUrl}/#/events/view?where=${condition}`});  
+        } else {
+            window.open(`${siemUrl}/#/events/view?where=${condition}`, "_blank");
+        }
+    }
+ }
 
 
 function color(d) {

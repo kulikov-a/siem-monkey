@@ -19,6 +19,7 @@ siem_bananas = {
   ".mc-sidebar_wide": "old",
   ".mc-sidebar_right": "R24",
   "mc-sidedar-toggle": "R25",
+  ".mc-sidebar-toggle": "R27.1",
 };
 siem_ver = "";
 prod_name = "";
@@ -67,13 +68,13 @@ var SearchBananas = function (selectors, callback, interval, timeout) {
         bananas_found = document.querySelectorAll(banana).length;
         if (bananas_found == 0) {
           // no bananas in DOM. try in shadow DOM
-          let legacy_events = $("legacy-events-page");
-          if (legacy_events.length === 1) {
-            let shadowRoot = legacy_events[0].shadowRoot;
-            if (shadowRoot) {
-              bananas_found = $(shadowRoot).find(banana).length;
-            }
+          let shadows = findRoots(document.body);
+          if (shadows) {
+            $.each(shadows, function (i, el){
+              bananas_found = $(el).find(banana).length;
+            })
           }
+
         }
         if (bananas_found > 0) {
           console.log("SIEM is banana!");
@@ -87,6 +88,14 @@ var SearchBananas = function (selectors, callback, interval, timeout) {
     time += interval;
   }, interval);
 };
+
+function findRoots(ele) {
+  return [
+      ele,
+      ...ele.querySelectorAll('*')
+  ].filter(e => !!e.shadowRoot)
+      .flatMap(e => [e.shadowRoot, ...findRoots(e.shadowRoot)])
+}
 
 /**
  * Adopting a constructed stylesheet to be used by the document or ShadowRoots 
@@ -152,6 +161,14 @@ SearchBananas(
         attributes: true,
       });
       adoptCSS(shadowRoot, "siemMonkey.css");
+    } else if ($("mc-sidebar").last()) {
+      sidebar = $("mc-sidebar").last()[0];
+      observer.observe(sidebar,{
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+      })
     } else {
       // Старый добрый UI до 26.0 включительно - вешаем обработчик мутаций прямо на весь document,
       // CSS уже подгружен в основное дерево
@@ -231,6 +248,9 @@ function makeSideBarGreatAgain()
     {
       iframe = $('#legacyApplicationFrame'); 
       sidebar = $('.mc-sidebar_right', iframe.contents()); //new ui R25
+    }
+    if(sidebar.length == 0) {
+      sidebar = $("mc-sidebar").last(); // R27.1 UI
     }
   }
   icons = sidebar.find(".pt-icons").first();
@@ -357,7 +377,7 @@ let observer = new MutationObserver(async mutations => {
         && mutation.target.parentNode.parentNode.nodeName === 'RULES-CARD-LINK')
         || mutation.target.parentNode.nodeName === 'RULES-CARD-LINK')
         && mutation.target.className === 'mc-link ng-scope'
-        && 'options' in options && 'dont_show_desc_rules' in options.options && options.options.dont_show_desc_rules === false){
+        && 'options' in options && 'dont_show_desc_rules' in options.options && options.options.dont_show_desc_rules === false) {
           
           let correlation_name_node = $(mutation.target.parentNode).children('span.mc-link.ng-scope');
           let correlation_name = correlation_name_node.text();
@@ -374,55 +394,125 @@ let observer = new MutationObserver(async mutations => {
             setTimeout(AddElementIfNotExist, 0, correlation_name_node, correlation_description);
             setTimeout(AddElementIfNotExist, 0, correlation_name_node, correlation_link_to_ptkb);
           }  
+      } else if (mutation.target.nodeName === '#text' && $(mutation.target).parents('pt-siem-rules-card-link').length > 0
+        && mutation.target.parentNode.parentNode.parentNode.nodeName === 'PT-SIEM-RULES-CARD-LINK'
+        && 'options' in options && 'dont_show_desc_rules' in options.options && options.options.dont_show_desc_rules === false) {
+          // R27.1 UI
+          let corr_changed = true;
+          correlation_name_node = $(mutation.target.parentNode);
+          let correlation_name = correlation_name_node.text();
+          if (($('#prev_corr_name').length > 0) && $('#prev_corr_name').text() != correlation_name) {
+            $('#prev_corr_name').text(correlation_name);
+          } else if ($('#prev_corr_name').length == 0){
+            let old_corr_span = $('<span>', {id: 'prev_corr_name'}).text(correlation_name).hide();
+            $('PT-SIEM-RULES-CARD-LINK').after(old_corr_span);
+          } else {
+            corr_changed = false;
+          }
+
+          if (corr_changed == true) {
+            $('i.corr-link').remove();
+            $('span.corr-desc').remove();
+            let msg = await getCorrelationRuleInfoByName(correlation_name);
+            let [correlation_description, correlation_link_to_ptkb] = corr_name_info(msg);
+            
+            let bind_node = $(correlation_name_node).parents('PT-SIEM-RULES-CARD-LINK').first();
+            setTimeout(AddElementIfNotExist, 0, bind_node, correlation_description);
+            setTimeout(AddElementIfNotExist, 0, bind_node, correlation_link_to_ptkb);
+          }
       }
 
       for(let addedNode of mutation.addedNodes) {
+
         // Регистрация обработчиков клика на названия определенных полей в правом сайдбаре (карточка события)
         if (addedNode instanceof Node && (addedNode.className === "mc-dl-conditional ng-scope")) {
-              if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "uuid") {
-                if('options' in options &&
-                 'dont_show_save_event_icons' in options.options && 
-                 options.options.dont_show_save_event_icons == true) {
-                  ; //если задана опция "Не показывать кнопки сохранения JSON события", то и не показываем
-                }
-                else {
-                  await uuidChange(addedNode);
-                }
-                await shareableLinkIconAdd(addedNode);
-              } 
-              if(addedNode.children.length = 2 && addedNode.children[0].innerHTML.endsWith(".hash")) {
-                if('options' in options && 'hashlinks' in options.options && options.options.hashlinks.length > 0) {
-                  ObjectHashAdd(addedNode, addedNode.children[0].innerHTML);
-                }
-                else{
-                  CommonFieldClick(addedNode, addedNode.children[0].innerHTML, GetVirusTotalLinkForHash);
-                }
-                
-              }             
-              if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "external_link") {
-                CommonFieldClick(addedNode, "external_link", GetExternalLink);
-              }
-              if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "task_id") {
-                CommonFieldClick(addedNode, "task_id", GetTaskLink);
-              }
-              if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "id") {
-                CommonFieldClick(addedNode, "id", GetNormalizationSearchLink);
-                await fieldAliases(addedNode); 
-              }
-              if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "correlation_name") {
-                await fieldAliases(addedNode); 
-              }
-              if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "src.ip") {
-                await ipfieldChangeObserver(addedNode, "src.ip");
-              }
-              if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "dst.ip") {
-                await ipfieldChangeObserver(addedNode, "dst.ip");
-              }
-              if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "object") {
-                ProcessHandler(addedNode);  
-              }
+          if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "uuid") {
+            if('options' in options &&
+             'dont_show_save_event_icons' in options.options && 
+             options.options.dont_show_save_event_icons == true) {
+              ; //если задана опция "Не показывать кнопки сохранения JSON события", то и не показываем
             }
+            else {
+              await uuidChange(addedNode);
+            }
+            await shareableLinkIconAdd(addedNode);
+          } 
+          if(addedNode.children.length = 2 && addedNode.children[0].innerHTML.endsWith(".hash")) {
+            if('options' in options && 'hashlinks' in options.options && options.options.hashlinks.length > 0) {
+              ObjectHashAdd(addedNode, addedNode.children[0].innerHTML);
+            }
+            else{
+              CommonFieldClick(addedNode, addedNode.children[0].innerHTML, GetVirusTotalLinkForHash);
+            }
+            
+          }             
+          if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "external_link") {
+            CommonFieldClick(addedNode, "external_link", GetExternalLink);
+          }
+          if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "task_id") {
+            CommonFieldClick(addedNode, "task_id", GetTaskLink);
+          }
+          if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "id") {
+            CommonFieldClick(addedNode, "id", GetNormalizationSearchLink);
+            await fieldAliases(addedNode); 
+          }
+          if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "correlation_name") {
+            await fieldAliases(addedNode); 
+          }
+          if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "src.ip") {
+            await ipfieldChangeObserver(addedNode, "src.ip");
+          }
+          if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "dst.ip") {
+            await ipfieldChangeObserver(addedNode, "dst.ip");
+          }
+          if(addedNode.children.length = 2 && addedNode.children[0].innerHTML === "object") {
+            ProcessHandler(addedNode);  
+          }
+        } else if (addedNode instanceof Node && addedNode.nodeType == 1 && addedNode.hasAttribute('ictitle')) { // R27.1 quick support. TODO: need some more elegant way to adjust releases
+          if(addedNode.innerHTML === " uuid ") {
+            if('options' in options &&
+              'dont_show_save_event_icons' in options.options && 
+              options.options.dont_show_save_event_icons == true) {
+              ; //если задана опция "Не показывать кнопки сохранения JSON события", то и не показываем
+            }
+            else {
+              await uuidChange(addedNode);
+            }
+            await shareableLinkIconAdd(addedNode);
+          } 
+          if(addedNode.innerHTML.endsWith(".hash ")) {
+            if('options' in options && 'hashlinks' in options.options && options.options.hashlinks.length > 0) {
+              ObjectHashAdd(addedNode, addedNode.innerHTML);
+            }
+            else{
+              CommonFieldClick(addedNode, addedNode.innerHTML, GetVirusTotalLinkForHash);
+            }
+            
+          }             
+          if(addedNode.innerHTML === " external_link ") {
+            CommonFieldClick(addedNode, " external_link ", GetExternalLink);
+          }
+          if(addedNode.innerHTML === " task_id ") {
+            CommonFieldClick(addedNode, " task_id ", GetTaskLink);
+          }
+          if(addedNode.innerHTML === " id ") {
+            CommonFieldClick(addedNode, " id ", GetNormalizationSearchLink);
+            await fieldAliases(addedNode); 
+          }
+          if(addedNode.innerHTML === " correlation_name ") {
+            await fieldAliases(addedNode); 
+          }
+          if(addedNode.innerHTML === " src.ip ") {
+            await ipfieldChangeObserver(addedNode, "src.ip");
+          }
+          if(addedNode.innerHTML === " dst.ip " ) {
+            await ipfieldChangeObserver(addedNode, "dst.ip");
+          }
+          if(addedNode.innerHTML === " object ") {
+            ProcessHandler(addedNode);  
+          }
         }
+      }
    }
 });
 
@@ -566,10 +656,19 @@ function ProcessHandler(addedNode) {
 
   let hostname_element = $("div[title=\"object\"]", addedNode);
   let value_node = hostname_element.next();
+  if (value_node.length == 0) {
+    value_node = $(addedNode).next().find('span').last(); // R27.1 UI
+  }
   let value = $(".pt-preserve-white-space", value_node).text().trim("↵");
+  if (value == null || value == "") {
+    value = value_node.text(); // R27.1 UI
+  }
   //if(value === "process") {
 
     let value_node_span = $("pdql-fast-filter", value_node);
+    if (value_node_span.length == 0) {
+      value_node_span = $(addedNode).next().find('pt-siem-text-truncate').children(':first'); // R27.1 UI
+    }
         
     let ancestors_branch_icon = $(`<span title="Предки процесса...">🦧</span>`);
     let session_tree_icon = $(`<span title="Дерево процессов сессии...">🦍</span>`);
@@ -638,8 +737,12 @@ function ProcessHandler(addedNode) {
           `object.process.guid = '${object_process_guid}' and msgid = 1`,
           1, 
           function(e) {
-            let uuid = e[0]['uuid'];
-            getdata(siemUrl, `uuid in ['${uuid}']`, count, processTreeBranch, "", ttimeto - 86400, ttimeto);
+            if (e.length > 0) {
+              let uuid = e[0]['uuid'];
+              if (uuid) {
+                getdata(siemUrl, `uuid in ['${uuid}']`, count, processTreeBranch, "", ttimeto - 86400, ttimeto);
+              }
+            }
           },
         "",
         ttimeto - 86400, // 1 сутки назад
@@ -706,11 +809,13 @@ function ProcessHandler(addedNode) {
           `object.process.guid = '${object_process_guid}' and msgid = 1`,
           1, 
           function(e) {
-            let event_src_host = e[0]['event_src.host'];
-            let processStartMsgid = e[0]['msgid'];
-            let session = e[0]['object.account.session_id'];
+            if (e.length > 0) {
+              let event_src_host = e[0]['event_src.host'];
+              let processStartMsgid = e[0]['msgid'];
+              let session = e[0]['object.account.session_id'];
 
-            getdata(siemUrl, `event_src.host = "${event_src_host}" and msgid = "${processStartMsgid}" and object.account.session_id = ${session} and (correlation_name = null)`, count, processTree, "", ttimeto - 86400, ttimeto);
+              getdata(siemUrl, `event_src.host = "${event_src_host}" and msgid = "${processStartMsgid}" and object.account.session_id = ${session} and (correlation_name = null)`, count, processTree, "", ttimeto - 86400, ttimeto);
+            }
           },
         "",
         ttimeto - 86400, // 1 сутки назад
@@ -775,8 +880,10 @@ function ProcessHandler(addedNode) {
           `object.process.guid = '${object_process_guid}' and msgid = 1`,
           1, 
           function(e) {
-            let uuid = e[0]['uuid'];
-            getdata(siemUrl, `uuid = '${uuid}'`, count, processTreeBranchReverse, "", ttimeto - 86400 - 600, ttimeto);    //TODO: со временем путаница и не удобно, надо распутаться
+            if (e.length > 0) {
+              let uuid = e[0]['uuid'];
+              getdata(siemUrl, `uuid = '${uuid}'`, count, processTreeBranchReverse, "", ttimeto - 86400 - 600, ttimeto);    //TODO: со временем путаница и не удобно, надо распутаться
+            }
           },
         "",
         ttimeto - 86400, // 1 сутки назад
@@ -793,16 +900,21 @@ function ProcessHandler(addedNode) {
  */
 function getFieldValueFromSidebar(fieldName) {
   let legacy_events_page = $("legacy-events-page");
-  if(legacy_events_page.length === 1) {
+  if (legacy_events_page.length === 1) {
     let shadowRoot = legacy_events_page[0].shadowRoot;
     let fieldValue = $(`div[title=\"${fieldName}\"] + div > div > div:first`, shadowRoot).text().trim('↵');  
     return fieldValue;
-  }
+  }  
 
   let iframe = $('#legacyApplicationFrame'); 
   let fieldValue = $(`div[title=\"${fieldName}\"] + div > div > div:first`, iframe.contents()).text().trim('↵');
   if (fieldValue == "") {
     fieldValue = $(`div[title=\"${fieldName}\"] + div > div > div:first`).text().trim('↵');
+  }
+
+  if (fieldValue == "") {
+    sidebar = $("mc-sidebar").last(); // R27.1 UI
+    fieldValue = sidebar.find('mc-dt[ictitle]:contains(' + fieldName + ')').next().find('pt-siem-text-truncate').find('span').last().text();
   }
   return fieldValue;
 }
@@ -826,6 +938,10 @@ function getTimeValueFromSidebar() {
     if (time.length === 0) {
       let iframe = $('#legacyApplicationFrame'); 
       time = $("mc-sidebar-opened > header > div.layout-row.flex > div > div", iframe.contents()).text().trim("↵");
+    }
+    if (time.length == 0) {
+      sidebar = $("mc-sidebar").last(); // R27.1 UI
+      time = sidebar.find('pt-siem-event-icon-type').nextAll('div').find('span').last().text().trim();
     }
   }
   return time;
@@ -909,23 +1025,31 @@ function SrcIPAdd(addedNode) {
 
 function ObjectHashAdd(addedNode, fieldname) {
   $('.monkeyipinfo').remove();
-  dst_ip_element = $(`div[title=\"${fieldname}\"]`, addedNode);
-  value_node = dst_ip_element.next();
+  hash_element = $(`div[title=\"${fieldname}\"]`, addedNode);
+  if (hash_element.length == 0) {
+    hash_element = $(addedNode); // R27.1 UI
+  }
+  value_node = hash_element.next();
   value_node_span = $("pdql-fast-filter", value_node);
 
-  dst_ip_element.text(`▸${fieldname}`);
-  dst_ip_element.click(function () {
+  hash_element.text(`▸${fieldname}`).addClass("monkey_link_title");
+  hash_element.click(function () {
+    if ($(".ip-check-external-link", addedNode).length == 0 ) {
+      addedNode = $(addedNode).parents(); // R27.1 UI
+    }
     if ($(".ip-check-external-link", addedNode).css("display") === "block") {
-        $(".ip-check-external-link", addedNode).css("display", "none");
-        $(this).text(`▸${fieldname}`);
-    } 
-    else {
-        $(".ip-check-external-link", addedNode).css("display", "block");
-        $(this).text(`▾${fieldname}`);
+      $(".ip-check-external-link", addedNode).css("display", "none");
+      $(this).text(`▸${fieldname}`);
+    } else {
+      $(".ip-check-external-link", addedNode).css("display", "block");
+      $(this).text(`▾${fieldname}`);
     }
   });
 
   object_hash_span = $(`div[title=\"${fieldname}\"] + div span.pt-preserve-white-space`, addedNode);
+  if (object_hash_span.length == 0) {
+    object_hash_span = $(addedNode).next().find('span').last(); // R27.1 UI
+  }
   object_hash_span.nextAll("span").remove();
 
   AddHashExternalServiceLink(object_hash_span, "проверить на VT", VTHashLink);
@@ -948,15 +1072,23 @@ function AddExternalServiceLink(src_ip_span, text, callback) {
   vtdiv.text(text);
   vtdiv.hover(function(){
     let ip_to_check = $(".pt-preserve-white-space", $(this).parent()).text().replace(/[^.0-9]+/g, "");
+    if (ip_to_check.length == 0) {
+      ip_to_check = $(this).parent().find('span.mc-text-only').text().replace(/[^.0-9]+/g, ""); // R27.1 UI
+    }
     $(this).css('cursor','pointer').attr('title', callback(ip_to_check));
-    }, function() {
+    },
+    function() {
     $(this).css('cursor','auto');
   });
   vtdiv.click(function () {
     let ip_to_check = $(".pt-preserve-white-space", $(this).parent()).text().replace(/[^.0-9]+/g, "");
+    if (ip_to_check.length == 0) {
+      ip_to_check = $(this).parent().find('span.mc-text-only').text().replace(/[^.0-9]+/g, ""); // R27.1 UI
+    }
     window.open(callback(ip_to_check), "_blank");
   });
-  vtdiv.insertAfter(src_ip_span);
+  //vtdiv.insertAfter(src_ip_span);
+  vtdiv.insertAfter(src_ip_span.parents('pt-siem-events-link-popover'));
 }
 
 function AddHashExternalServiceLink(src_ip_span, text, callback) {
@@ -964,16 +1096,27 @@ function AddHashExternalServiceLink(src_ip_span, text, callback) {
   vtdiv.addClass('ip-check-external-link');
   vtdiv.text(text);
   vtdiv.hover(function(){
-    let ip_to_check = $(".pt-preserve-white-space", $(this).parent()).text();//.replace(/[^.0-9]+/g, "");
+    let ip_to_check = $(".pt-preserve-white-space", $(this).parent()).text();
+    if (ip_to_check.length == 0) {
+      ip_to_check = $(this).parent().find('span.mc-text-only').text(); // R27.1 UI
+    }
     $(this).css('cursor','pointer').attr('title', callback(ip_to_check));
     }, function() {
     $(this).css('cursor','auto');
   });
   vtdiv.click(function () {
-    let ip_to_check = $(".pt-preserve-white-space", $(this).parent()).text();//.replace(/[^.0-9]+/g, "");
+    let ip_to_check = $(".pt-preserve-white-space", $(this).parent()).text();
+    if (ip_to_check.length == 0) {
+      ip_to_check = $(this).parent().find('span.mc-text-only').text(); // R27.1 UI
+    }
     window.open(callback(ip_to_check), "_blank");
   });
-  vtdiv.insertAfter(src_ip_span);
+
+  if (siem_ver == "R27.1") {
+    vtdiv.insertAfter(src_ip_span.parents('pt-siem-events-link-popover')); // R27.1 UI
+  } else {
+    vtdiv.insertAfter(src_ip_span);
+  }
 }
 
 function VTLink(ip_to_check)
@@ -1053,9 +1196,15 @@ function ExtractHashFromHashValue(hash_to_check) {
  */
  async function CommonFieldClick(addedNode,  fieldname, callback) {
   element = $(`div[title=\"${fieldname}\"]`, addedNode);
+  if (element.length == 0) {
+    element = $(addedNode).next().find('span').first(); // R27.1 UI
+  }
   element.click(async function (){
     valueNode = $(this).next();
     value = $(".pt-preserve-white-space", valueNode);
+    if (valueNode.length == 0) {
+      value = $(this); // R27.1 UI
+    }
     link = await callback(value.text());
     window.open(link, "_blank"); 
   });
@@ -1183,9 +1332,15 @@ async function ipfieldChangeObserver(addedNode, fieldname){
   
   setTimeout(function(addedNode){
     let src_ip_span = $(`div[title=\"${fieldname}\"] + div span.pt-preserve-white-space`, addedNode);
+    if (src_ip_span.length == 0) {
+      src_ip_span = $(addedNode).next().find('span').last(); // R27.1 UI
+    }
     const ip_span_observer = new MutationObserver(mutationList =>
       setTimeout(function(changedElement){
         $(changedElement).nextAll("span").remove();
+        if ($(changedElement).nextAll("span").length == 0) {
+          $(changedElement).parents('pt-siem-events-link-popover').nextAll("span.ip-check-external-link").remove(); // 27.1
+        }
         src_ip = $(changedElement).text();
         let addr = ipaddr.parse(src_ip);
         let range = addr.range();
@@ -1205,13 +1360,22 @@ async function ipfieldChangeObserver(addedNode, fieldname){
     );
 
     span_to_observe = addedNode.querySelector(`div[title=\"${fieldname}\"] + div span.pt-preserve-white-space`);
+    if (!span_to_observe) {
+      span_to_observe = $(addedNode).next().find('span').last()[0]; // R27.1 UI
+    }
     if (span_to_observe) {
       ip_span_observer.observe(span_to_observe,{childList: true, subtree: true, characterDataOldValue: true,});
     }
 
     src_ip_element = $(`div[title=\"${fieldname}\"]`, addedNode);
-    src_ip_element.text(`▸${fieldname}`);
+    if (src_ip_element.length == 0) {
+      src_ip_element = $(addedNode); // R27.1 UI
+    }
+    src_ip_element.text(`▸${fieldname}`).addClass("monkey_link_title");
     src_ip_element.click(function () {
+      if ($(".ip-check-external-link", addedNode).length == 0 ) {
+        addedNode = $(addedNode).parents(); // R27.1 UI
+      }
       if ($(".ip-check-external-link", addedNode).css("display") === "block") {
           $(".ip-check-external-link", addedNode).css("display", "none");
           $(this).text(`▸${fieldname}`);
@@ -1252,16 +1416,22 @@ async function uuidChange(addedNode){
     // uuid меняется при клике на каждое новое событие, т.к. он уникален
     // это можно использоать для добавления/удаления элементов при необходимости
     let value_node_span = $("pdql-fast-filter", addedNode);
+    if (value_node_span.length == 0) {
+      value_node_span = $(addedNode).next().find('span').last();  // R27.1 UI
+    }
   
     // нарисовать иконки при изменении значения поля uuid
     const value_span_observer = new MutationObserver(mutationList =>
     // костылим ожидание, пока загрузится всё в правой панели, 500 мс должно хватить
       setTimeout(function(changedElement){
-        let sidebar = changedElement.closest('mc-sidebar');
+        let sidebar = changedElement.closest('mc-sidebar'); // for R27.1 UI check
         // нужно убрать старую иконку загрузки сабивентов
         $('.downloadsubeventsnormalizedicon').remove();
         // и нарисовать новую, если есть поле correlation_name
         let correlation_name = $("div[title=\"correlation_name\"]", sidebar)
+        if (correlation_name.length == 0) {
+          correlation_name = sidebar.find('mc-dt[ictitle]:contains("correlation_name")').next().find('span').last(); // R27.1 UI
+        }
         if(correlation_name.length > 0) {
           AddDownloadNormalizedSubeventsIcon($('.downloadnormalizedicon'));
         }
@@ -1271,6 +1441,9 @@ async function uuidChange(addedNode){
     );
 
     value_node_to_observe = addedNode.querySelector("pdql-fast-filter");
+    if (!value_node_to_observe) {
+      value_node_to_observe = $(addedNode).next().find('span').last()[0]; // R27.1 UI
+    }
     if (value_node_to_observe) {
       value_span_observer.observe(value_node_to_observe,{childList: true, subtree: true, characterDataOldValue: true,});
     }
@@ -1278,7 +1451,13 @@ async function uuidChange(addedNode){
     // нарисовать иконки загрузки событий при появлении uuid первый раз на странице
     let sidebar = $(addedNode).closest('mc-sidebar');
     let event_icon_type = $('event-icon-type', sidebar);
+    if (event_icon_type.length == 0) { 
+      event_icon_type = $('pt-siem-event-icon-type', sidebar); // R27.1 UI
+    }
     let correlation_name = $("div[title=\"correlation_name\"]", sidebar);
+    if (correlation_name.length == 0) {
+      correlation_name = sidebar.find('mc-dt[ictitle]:contains("correlation_name")').next().find('span').last(); // 27.1
+    }
     if(correlation_name.length > 0) {
       AddDownloadNormalizedSubeventsIcon(event_icon_type.next());
     }
@@ -1297,6 +1476,9 @@ async function shareableLinkIconAdd(addedNode){
   setTimeout(function(addedNode){
     let sidebar = $(addedNode).closest('mc-sidebar');
     let event_icon_type = $('event-icon-type', sidebar);
+    if (event_icon_type.length == 0) {
+      event_icon_type = $('pt-siem-event-icon-type', sidebar); // R27.1 UI
+    }
     AddGetShareableEventLinkIcon(event_icon_type);
   },
   500,
@@ -1404,7 +1586,7 @@ function AddGetShareableEventLinkIcon(addedNode) {
       searchNode = document;
     }
     let icon = $(".shareableeventlink", searchNode);
-    $('<div>Ссылка в буфере обмена...</div>').insertAfter(icon).show().delay(500).fadeOut();
+    $('<div>Ссылка в буфере обмена...</div>').insertAfter(icon).show().delay(500).fadeOut(300, function() { $(this).remove(); });
   })
 }
 
@@ -1423,9 +1605,15 @@ async function popup_event_handler() {
       // получаем от SIEM список поддерживаемых полей и для каждого поля парсим из правого сайдбара значение
       let msg = await getTaxonomy();
       let fields = msg['fields'];
-      fields.forEach( x => {
-          params[x.name] = $(`div[title=\"${x.name}\"] + div > div > div:first`, applicationNode).text().trim('↵');
-      });
+      if (siem_ver == "R27.1")  {
+        fields.forEach ( x => {
+          params[x.name] = getFieldValueFromSidebar(x.name); // R27.1 UI
+        })
+      } else {
+        fields.forEach( x => {
+            params[x.name] = $(`div[title=\"${x.name}\"] + div > div > div:first`, applicationNode).text().trim('↵');
+        })
+      }
       params['time'] = getTimeValueFromSidebar();
   }
   catch(err)
@@ -1466,6 +1654,9 @@ if(window.location.pathname != '/ng1/') {
 async function fieldAliases(addedNode) {
   await applyFieldAliases(addedNode);
   let value_node_span = $("pdql-fast-filter", addedNode);
+  if (value_node_span.length == 0) {
+    value_node_span = $(addedNode).next().find('pt-siem-text-truncate').children(':first'); // R27.1 UI
+  }
   const value_node_span_observer = new MutationObserver(mutationList =>
     // костылим ожидание, пока загрузится всё в правой панели, 500 мс должно хватить
     setTimeout(async function(changedElement){
@@ -1475,7 +1666,10 @@ async function fieldAliases(addedNode) {
     value_node_span)
   );
 
-  value_node_span_to_observe = addedNode.querySelector("pdql-fast-filter");
+  let value_node_span_to_observe = addedNode.querySelector("pdql-fast-filter");
+  if (!value_node_span_to_observe) {
+    value_node_span_to_observe = $(addedNode).next().find('span').last()[0]; // R27.1 UI
+  }
   if (value_node_span_to_observe) {
     value_node_span_observer.observe(value_node_span_to_observe,{childList: true, subtree: true, characterDataOldValue: true,});
   }
@@ -1534,6 +1728,9 @@ async function applyFieldAliases(changedElement) {
   }
 
   let correlation_name = $(`div[title=\"correlation_name\"] + div > div > div:first`, sidebar).text().trim('↵');
+  if (correlation_name.length == 0) {
+    correlation_name = $("mc-sidebar").last().find('mc-dt[ictitle]:contains("correlation_name")').next().find('span').last().text(); // R27.1 UI
+  }
   if (correlation_name in fieldAliases) {
     let fieldsObj = fieldAliases[correlation_name];
     Object.keys(fieldsObj).forEach(function (fieldName) {
