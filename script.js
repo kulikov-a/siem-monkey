@@ -628,7 +628,10 @@ async function getdata(siemUrl, filter, count, callback, outputelemsuffix="", tt
             $(`#output${outputelemsuffix}`).text("Ожидайте...");
             let loading = document.createElement("div");
             loading.classList.add("lds-dual-ring");
-            $(`#output${outputelemsuffix}`).html(loading); 
+            $(`#output${outputelemsuffix}`).html(loading);
+            if ($(`#output${outputelemsuffix}`).length == 0) {
+              $("[id^='output']").html(loading); // outputelemsuffix may change during tree build?
+            }
 
             $.ajax({
               type: "POST",

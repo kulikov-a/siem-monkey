@@ -210,7 +210,7 @@ async function processTreeBranch(pre_events, outputelemsuffix="")
         treeBranchEvents.push(pre_events[0]);
         let event_src_host = pre_events[0]['event_src.host'];
         let processStartMsgid = pre_events[0]['msgid'];
-        if('object.process.guid' in pre_events[0]) {
+        if('object.process.guid' in pre_events[0] && pre_events[0]['object.process.guid'] != null) {
             let parentProcessPid = pre_events[0]['object.process.parent.guid'];
             getdata(siemUrl,
                 `event_src.host = "${event_src_host}"` + 
@@ -241,7 +241,8 @@ async function processTreeBranchReverse(pre_events, outputelemsuffix="")
 {
     // в outputelemsuffix лежит guid процесса-родителя, для которого искались потомки
     events_for_children_waiting = _.without(events_for_children_waiting, outputelemsuffix)
-    if(pre_events.length === 0)
+    const includesAll = (arr, values) => values.every(v => arr.includes(v));
+    if(pre_events.length === 0 || includesAll(treeBranchEvents, pre_events) || treeBranchEvents.length > 60)
     {
         if(events_for_children_waiting.length > 0)
         {
