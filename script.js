@@ -181,7 +181,7 @@ SearchBananas(
     }
   },
   500,
-  6000
+  10000
 );
 
 function insertMonkeyIntoUI() {
