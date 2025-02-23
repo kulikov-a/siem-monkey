@@ -13,13 +13,13 @@
 //    limitations under the License.
 
 
-pt_tags = ["pt-siem-app-root", "pt-nad-root"];
+pt_tags = ["pt-siem-app-root", "pt-nad-root", "ips-root"];
 pt_product = false;
 siem_bananas = {
   ".mc-sidebar_wide": "old",
   ".mc-sidebar_right": "R24",
   "mc-sidedar-toggle": "R25",
-  ".mc-sidebar-toggle": "R27.1",
+  ".mc-sidebar-toggle": "R27.1-3",
 };
 siem_ver = "";
 prod_name = "";
@@ -71,7 +71,9 @@ var SearchBananas = function (selectors, callback, interval, timeout) {
           let shadows = findRoots(document.body);
           if (shadows) {
             $.each(shadows, function (i, el){
-              bananas_found = $(el).find(banana).length;
+              if (bananas_found == 0) {
+                bananas_found = $(el).find(banana).length;
+              }
             })
           }
 
@@ -161,7 +163,17 @@ SearchBananas(
         attributes: true,
       });
       adoptCSS(shadowRoot, "siemMonkey.css");
+    } else if($("ips-shell-remote-app").length > 0) {
+      // R27.3 UI
+      sidebar = $("mc-sidebar", $("siem-core", $("ips-shell-remote-app")[0].shadowRoot)[0].shadowRoot).last()[0];
+      observer.observe(sidebar,{
+        childList: true,
+        subtree: true,
+        characterData: true,
+        attributes: true,
+      })
     } else if ($("mc-sidebar").last()) {
+      //
       sidebar = $("mc-sidebar").last()[0];
       observer.observe(sidebar,{
         childList: true,
@@ -186,6 +198,10 @@ SearchBananas(
 
 function insertMonkeyIntoUI() {
   let siem_title_elem = $("body > pt-siem-app-root > pt-siem-header > header > mc-navbar > mc-navbar-container:nth-child(1) > pt-siem-navbar-brand > a > mc-navbar-title");
+  if (siem_title_elem.length == 0) {
+    // R27.3 UI
+    siem_title_elem = $("main > ipn-navbar-container > header > mc-navbar > mc-navbar-container:nth-child(1) > ipn-navbar-brand > a > mc-navbar-title", $("ipn-navbar")[0].shadowRoot);
+  }
   let siem_title = siem_title_elem.text();
 
   let nad_title_elem = $(".mc-navbar-title:first");
@@ -194,8 +210,12 @@ function insertMonkeyIntoUI() {
  if (siem_title === "MaxPatrol 10") {
     makeSideBarGreatAgain();
     let navbaritem = $(".mc-navbar-logo");
-    navbaritem.append(`<img class="monkeydropbtn" width="32" height="32" src="${icondataurl}" alt="" />`);
-    $(".monkeydropbtn")
+    if (navbaritem.length == 0) {
+      // R27.3 UI
+      navbaritem = $($("ipn-navbar")[0].shadowRoot).find("mc-navbar-logo");
+     }
+    navbaritem.append(`<img class="monkeydropbtn" width="32" height="32" src="${icondataurl}" alt="why ui-team hates me?" />`);
+    $(".monkeydropbtn", navbaritem)
     .delay(100).fadeTo(100,0.5)
     .delay(100).fadeTo(100,1)
     .delay(100).fadeTo(100,0.5)
@@ -204,7 +224,7 @@ function insertMonkeyIntoUI() {
     .delay(100).fadeTo(100,1)
     .delay(3000)
     .animate(
-      { deg: 720 + 22.5 },
+      { deg: 3600 + 22.5 },
       {
         duration: 1200,
         step: function(now) {
@@ -251,6 +271,9 @@ function makeSideBarGreatAgain()
     }
     if(sidebar.length == 0) {
       sidebar = $("mc-sidebar").last(); // R27.1 UI
+    }
+    if(sidebar.length == 0) {
+      sidebar = $("mc-sidebar",$("siem-core", document.querySelector("ips-shell-remote-app").shadowRoot)[0].shadowRoot).last(); // R27.3 UI
     }
   }
   icons = sidebar.find(".pt-icons").first();
@@ -545,7 +568,6 @@ function getTaxonomy()
   );
   return request;
 }
-
 
 function getCorrelationRuleInfoByName(correlation_name)
 {
